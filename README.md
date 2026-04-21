@@ -25,8 +25,17 @@ A feature-rich image editor built with Tkinter and PIL (Pillow).
 ```
 
 ## Installation
+1.Install Python
+Follow link: https://www.python.org/
 
-1. Install required packages:
+2.Install pip
+Follow Link : https://pip.pypa.io/en/stable/installation/
+Download the script from : https://bootstrap.pypa.io/get-pip.py.
+```bash
+py get-pip.py
+```
+
+3. Install required packages:
 ```bash
 pip install Pillow
 pip install tkinterdnd2  # Optional: for drag and drop support
