@@ -25,6 +25,9 @@ A feature-rich image editor built with Tkinter and PIL (Pillow).
 ```
 
 ## Installation
+
+Walkthrough : https://youtu.be/5PicMOtJDqc
+
 1.Install Python
 Follow link: https://www.python.org/
 
