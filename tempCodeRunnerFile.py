@@ -1,0 +1,1 @@
+Select an image file or drop one here.

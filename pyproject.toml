@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "image-editor"
+version = "0.1.0"
+description = "A comprehensive image editor with viewing, drawing, and upscaling capabilities"
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+    "Pillow>=10.0.0",
+    "opencv-python>=4.8.0",
+    "scipy>=1.10.0",
+    "numpy>=1.24.0",
+    "tkinterdnd2>=0.3.0",
+]
+
+[project.scripts]
+image-editor = "main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]

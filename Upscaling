@@ -1,0 +1,523 @@
+import os
+import tkinter as tk
+from tkinter import filedialog, messagebox, Scale
+from PIL import Image, ImageTk, ImageDraw
+import colorsys
+
+try:
+    from tkinterdnd2 import DND_FILES, TkinterDnD
+    DND_AVAILABLE = True
+except ImportError:
+    DND_AVAILABLE = False
+
+root = TkinterDnD.Tk() if DND_AVAILABLE else tk.Tk()
+root.title("Image Preview & Editor")
+root.geometry("1100x800")
+root.config(padx=10, pady=10)
+root.resizable(True, True)
+
+image_canvas_width = 520
+image_canvas_height = 420
+
+main_frame = tk.Frame(root)
+main_frame.pack(fill="both", expand=True)
+
+left_frame = tk.Frame(main_frame)
+left_frame.pack(side="left", anchor="n", padx=(0, 10))
+
+image_box = tk.LabelFrame(left_frame, text="Canvas", bd=2, relief="groove")
+image_box.pack(fill="both", padx=0, pady=0)
+
+canvas = tk.Canvas(image_box, width=image_canvas_width, height=image_canvas_height, bg="#f8f8f8", highlightthickness=0, cursor="crosshair")
+canvas.pack(fill="both", expand=True)
+
+# Tools frame below image box
+tools_frame = tk.LabelFrame(left_frame, text="Tools", bd=2, relief="groove", padx=5, pady=5)
+tools_frame.pack(fill="x", pady=(10, 0))
+
+current_tool = tk.StringVar(value="select")
+
+pencil_btn = tk.Button(tools_frame, text="✏️ Pencil", command=lambda: set_tool("pencil"), width=10)
+pencil_btn.grid(row=0, column=0, padx=2, pady=2)
+
+eraser_btn = tk.Button(tools_frame, text="🧹 Eraser", command=lambda: set_tool("eraser"), width=10)
+eraser_btn.grid(row=0, column=1, padx=2, pady=2)
+
+dropper_btn = tk.Button(tools_frame, text="🎨 Dropper", command=lambda: set_tool("dropper"), width=10)
+dropper_btn.grid(row=0, column=2, padx=2, pady=2)
+
+size_label = tk.Label(tools_frame, text="Brush Size:")
+size_label.grid(row=1, column=0, sticky="w", padx=2, pady=(5, 0))
+
+brush_size = tk.IntVar(value=5)
+size_slider = Scale(tools_frame, from_=1, to=50, orient="horizontal", variable=brush_size)
+size_slider.grid(row=1, column=1, columnspan=2, sticky="ew", padx=2)
+
+# Color picker section
+color_frame = tk.LabelFrame(left_frame, text="Color Selection", bd=2, relief="groove", padx=5, pady=5)
+color_frame.pack(fill="x", pady=(10, 0))
+
+current_color = tk.StringVar(value="#FF0000")
+
+# RGB Sliders with color circle
+rgb_frame = tk.Frame(color_frame)
+rgb_frame.pack(fill="x", expand=True)
+
+r_val = tk.IntVar(value=255)
+g_val = tk.IntVar(value=0)
+b_val = tk.IntVar(value=0)
+
+def update_rgb(*args):
+    r = r_val.get()
+    g = g_val.get()
+    b = b_val.get()
+    hex_color = f"#{r:02x}{g:02x}{b:02x}"
+    current_color.set(hex_color)
+    color_circle.delete("all")
+    color_circle.create_oval(2, 2, 48, 48, fill=hex_color, outline="#000", width=2)
+
+r_val.trace("w", update_rgb)
+g_val.trace("w", update_rgb)
+b_val.trace("w", update_rgb)
+
+tk.Label(rgb_frame, text="R:").grid(row=0, column=0, sticky="w", padx=2)
+Scale(rgb_frame, from_=0, to=255, orient="horizontal", variable=r_val, bg="red", fg="white", length=120).grid(row=0, column=1, sticky="ew", padx=2)
+color_circle = tk.Canvas(rgb_frame, width=50, height=50, bg="white", relief="solid", bd=1)
+color_circle.grid(row=0, column=2, padx=(10, 2), rowspan=3)
+color_circle.create_oval(2, 2, 48, 48, fill="#FF0000", outline="#000", width=2)
+
+tk.Label(rgb_frame, text="G:").grid(row=1, column=0, sticky="w", padx=2)
+Scale(rgb_frame, from_=0, to=255, orient="horizontal", variable=g_val, bg="green", fg="white", length=120).grid(row=1, column=1, sticky="ew", padx=2)
+
+tk.Label(rgb_frame, text="B:").grid(row=2, column=0, sticky="w", padx=2)
+Scale(rgb_frame, from_=0, to=255, orient="horizontal", variable=b_val, bg="blue", fg="white", length=120).grid(row=2, column=1, sticky="ew", padx=2)
+
+right_frame = tk.Frame(main_frame, bg="#f5f5f5")
+right_frame.pack(side="left", fill="both", expand=True, padx=0, pady=0)
+
+# Info label
+info_label = tk.Label(
+    right_frame,
+    text=(
+        "Instructions:\n"
+        "- Select or drop an image to edit.\n"
+        "- Use mouse wheel to zoom.\n"
+        "- Use middle-click drag to pan.\n"
+        "- Select a tool and click/drag on image.\n"
+        "- Eraser only affects pencil strokes.\n"
+        "- Use RGB sliders or dropper to change color.\n"
+        "- Press F11 for fullscreen."
+    ),
+    justify="left",
+    bg="#f5f5f5",
+    anchor="nw",
+    padx=5,
+    pady=5,
+)
+info_label.pack(fill="both", expand=True, padx=5, pady=5)
+
+filename_label = tk.Label(root, text="Select an image file or drop one here.", anchor="w")
+filename_label.pack(fill="x", padx=5, pady=(10, 5))
+
+button_frame = tk.Frame(root)
+button_frame.pack(fill="x", pady=(0, 5))
+
+open_button = tk.Button(button_frame, text="Select Image", command=lambda: open_image_file())
+open_button.pack(side="left")
+
+# Undo/Redo buttons
+undo_btn = tk.Button(button_frame, text="↶ Undo", command=lambda: undo(), state="disabled")
+undo_btn.pack(side="left", padx=(10, 0))
+
+redo_btn = tk.Button(button_frame, text="↷ Redo", command=lambda: redo(), state="disabled")
+redo_btn.pack(side="left")
+
+# Save button at bottom right
+save_btn = tk.Button(button_frame, text="💾 Save", command=lambda: save_image(), state="disabled")
+save_btn.pack(side="right")
+
+supported_text = "Drag and drop is available." if DND_AVAILABLE else "Drag and drop not available (install tkinterdnd2)."
+support_label = tk.Label(button_frame, text=supported_text, anchor="e")
+support_label.pack(side="right", padx=(10, 0))
+
+current_photo = None
+current_image = None
+current_image_copy = None
+pencil_layer = None
+current_path = None
+current_zoom = 1.0
+min_zoom = 0.2
+max_zoom = 5.0
+zoom_step = 0.05
+image_item = None
+border_item = None
+canvas_text = canvas.create_text(
+    image_canvas_width // 2,
+    image_canvas_height // 2,
+    text="No image selected",
+    fill="#666",
+    font=("Arial", 14),
+    justify="center",
+)
+
+drawing = False
+last_x = 0
+last_y = 0
+
+# Undo/Redo history
+history = []
+history_index = -1
+max_history = 50
+
+
+def save_to_history():
+    """Save current pencil layer state to history."""
+    global history, history_index
+    if pencil_layer is None:
+        return
+    
+    # Remove any redo states
+    history = history[:history_index + 1]
+    
+    # Add current state
+    history.append(pencil_layer.copy())
+    history_index += 1
+    
+    # Limit history size
+    if len(history) > max_history:
+        history.pop(0)
+        history_index -= 1
+    
+    update_button_states()
+
+
+def undo():
+    """Undo last action."""
+    global history_index, pencil_layer
+    if history_index > 0:
+        history_index -= 1
+        pencil_layer = history[history_index].copy()
+        update_image_display()
+        update_button_states()
+
+
+def redo():
+    """Redo last undone action."""
+    global history_index, pencil_layer
+    if history_index < len(history) - 1:
+        history_index += 1
+        pencil_layer = history[history_index].copy()
+        update_image_display()
+        update_button_states()
+
+
+def update_button_states():
+    """Update the enabled/disabled state of undo/redo/save buttons."""
+    undo_btn.config(state="normal" if history_index > 0 else "disabled")
+    redo_btn.config(state="normal" if history_index < len(history) - 1 else "disabled")
+    save_btn.config(state="normal" if current_image_copy is not None else "disabled")
+
+
+def save_image():
+    """Save the edited image."""
+    if current_image_copy is None or pencil_layer is None:
+        messagebox.showwarning("Save Image", "No image to save.")
+        return
+    
+    # Combine original with pencil layer
+    combined = current_image_copy.copy()
+    combined.paste(pencil_layer, (0, 0), pencil_layer)
+    
+    filetypes = [
+        ("PNG files", "*.png"),
+        ("JPEG files", "*.jpg"),
+        ("All files", "*.*"),
+    ]
+    
+    save_path = filedialog.asksaveasfilename(
+        title="Save Edited Image",
+        defaultextension=".png",
+        filetypes=filetypes
+    )
+    
+    if save_path:
+        try:
+            combined.save(save_path)
+            messagebox.showinfo("Save Image", f"Image saved to {save_path}")
+        except Exception as exc:
+            messagebox.showerror("Save Image", f"Failed to save image:\n{exc}")
+
+
+def toggle_fullscreen(event=None):
+    """Toggle fullscreen mode."""
+    state = root.attributes('-fullscreen')
+    root.attributes('-fullscreen', not state)
+
+
+def set_tool(tool_name):
+    global current_tool
+    current_tool.set(tool_name)
+    canvas.config(cursor="crosshair" if tool_name != "select" else "arrow")
+
+
+def update_image_display(keep_mouse_point=False, mouse_x=None, mouse_y=None):
+    global current_photo, image_item, border_item, canvas_text
+    if current_image_copy is None:
+        return
+
+    # Combine original image with pencil layer
+    display_img = current_image_copy.copy()
+    if pencil_layer is not None:
+        display_img.paste(pencil_layer, (0, 0), pencil_layer)
+
+    img = display_img
+    width = max(1, int(img.width * current_zoom))
+    height = max(1, int(img.height * current_zoom))
+    img = img.resize((width, height), Image.LANCZOS)
+
+    current_photo = ImageTk.PhotoImage(img)
+    if image_item is None:
+        image_item = canvas.create_image(0, 0, image=current_photo, anchor="nw")
+    else:
+        canvas.itemconfig(image_item, image=current_photo)
+
+    if border_item is None:
+        border_item = canvas.create_rectangle(
+            1,
+            1,
+            image_canvas_width - 1,
+            image_canvas_height - 1,
+            width=0,
+        )
+
+    if canvas_text is not None:
+        canvas.delete(canvas_text)
+        canvas_text = None
+
+    canvas.configure(scrollregion=(0, 0, width, height))
+
+    if keep_mouse_point and mouse_x is not None and mouse_y is not None:
+        canvas_bbox = canvas.bbox("all")
+        if canvas_bbox:
+            img_x = int(mouse_x / current_zoom)
+            img_y = int(mouse_y / current_zoom)
+            img_x = max(0, min(img_x, width - image_canvas_width))
+            img_y = max(0, min(img_y, height - image_canvas_height))
+            canvas.xview_moveto(img_x / width if width > 0 else 0)
+            canvas.yview_moveto(img_y / height if height > 0 else 0)
+    else:
+        canvas.xview_moveto(0)
+        canvas.yview_moveto(0)
+
+    if current_path:
+        filename_label.config(text=f"{os.path.basename(current_path)}   Zoom: {int(current_zoom * 100)}%   Tool: {current_tool.get().upper()}")
+    else:
+        filename_label.config(text=f"Zoom: {int(current_zoom * 100)}%")
+
+
+def display_image(path):
+    global current_image, current_image_copy, pencil_layer, current_path, current_zoom, history, history_index
+    try:
+        img = Image.open(path).convert("RGB")
+    except Exception as exc:
+        messagebox.showerror("Open Image", f"Unable to open image:\n{exc}")
+        return
+
+    current_image = img
+    current_image_copy = img.copy()
+    
+    # Create transparent pencil layer
+    pencil_layer = Image.new("RGBA", (img.width, img.height), (0, 0, 0, 0))
+    
+    # Initialize history
+    history = [pencil_layer.copy()]
+    history_index = 0
+    
+    current_path = path
+    current_zoom = 1.0
+    update_image_display()
+    update_button_states()
+
+
+def change_zoom(delta, event=None):
+    global current_zoom
+    if current_image is None:
+        return
+
+    current_zoom += delta * zoom_step
+    current_zoom = max(min_zoom, min(max_zoom, current_zoom))
+
+    if event:
+        mouse_x = event.x
+        mouse_y = event.y
+        update_image_display(keep_mouse_point=True, mouse_x=mouse_x, mouse_y=mouse_y)
+    else:
+        update_image_display()
+
+
+def on_mousewheel(event):
+    if event.delta > 0:
+        change_zoom(1, event)
+    else:
+        change_zoom(-1, event)
+
+
+def open_image_file():
+    filetypes = [
+        ("Image files", "*.png *.jpg *.jpeg *.bmp *.gif *.webp"),
+        ("All files", "*.*"),
+    ]
+    path = filedialog.askopenfilename(title="Select Image", filetypes=filetypes)
+    if path:
+        display_image(path)
+
+
+def handle_drop(event):
+    if event.data:
+        path = event.data
+        if path.startswith('{') and path.endswith('}'):
+            path = path[1:-1]
+        path = path.strip()
+        if os.path.isfile(path):
+            display_image(path)
+        else:
+            messagebox.showwarning("Drop Image", "Please drop a valid file.")
+
+
+def start_pan(event):
+    canvas.scan_mark(event.x, event.y)
+
+
+def pan_image(event):
+    canvas.scan_dragto(event.x, event.y, gain=1)
+
+
+def on_canvas_press(event):
+    global drawing, last_x, last_y
+    if current_image_copy is None:
+        return
+    
+    drawing = True
+    last_x = event.x
+    last_y = event.y
+    
+    if current_tool.get() == "dropper":
+        pick_color(event)
+    elif current_tool.get() == "pencil":
+        draw_dot(event.x, event.y, current_color.get(), brush_size.get())
+    elif current_tool.get() == "eraser":
+        erase_dot(event.x, event.y, brush_size.get())
+
+
+def on_canvas_drag(event):
+    global last_x, last_y
+    if not drawing or current_image_copy is None:
+        return
+    
+    # Draw more frequently by interpolating points
+    dx = event.x - last_x
+    dy = event.y - last_y
+    distance = (dx**2 + dy**2)**0.5
+    
+    if distance > 0:
+        steps = max(1, int(distance / 2))  # Draw every 2 pixels
+        for i in range(steps + 1):
+            x = last_x + (dx * i / steps)
+            y = last_y + (dy * i / steps)
+            
+            if current_tool.get() == "pencil":
+                draw_dot(x, y, current_color.get(), brush_size.get())
+            elif current_tool.get() == "eraser":
+                erase_dot(x, y, brush_size.get())
+    
+    last_x = event.x
+    last_y = event.y
+    
+    # Update display after drawing
+    update_image_display()
+
+
+def on_canvas_release(event):
+    global drawing
+    if drawing:
+        save_to_history()  # Save state after drawing
+        update_button_states()
+    drawing = False
+
+
+def draw_dot(x, y, color, size):
+    """Draw a circle dot on the pencil layer."""
+    global pencil_layer
+    
+    if pencil_layer is None:
+        return
+    
+    # Convert canvas coords to image coords
+    img_x = int(x / current_zoom)
+    img_y = int(y / current_zoom)
+    
+    draw = ImageDraw.Draw(pencil_layer)
+    radius = int(size / 2 / current_zoom) or 1
+    draw.ellipse(
+        [(img_x - radius, img_y - radius), (img_x + radius, img_y + radius)],
+        fill=color + "FF"
+    )
+
+
+def erase_dot(x, y, size):
+    """Erase a circle area from the pencil layer."""
+    global pencil_layer
+    
+    if pencil_layer is None:
+        return
+    
+    # Convert canvas coords to image coords
+    img_x = int(x / current_zoom)
+    img_y = int(y / current_zoom)
+    
+    draw = ImageDraw.Draw(pencil_layer)
+    radius = int(size / 2 / current_zoom) or 1
+    draw.ellipse(
+        [(img_x - radius, img_y - radius), (img_x + radius, img_y + radius)],
+        fill=(0, 0, 0, 0)
+    )
+
+
+def pick_color(event):
+    """Pick color from image using dropper."""
+    if current_image_copy is None:
+        return
+    
+    img_x = int(event.x / current_zoom)
+    img_y = int(event.y / current_zoom)
+    
+    img_x = max(0, min(img_x, current_image_copy.width - 1))
+    img_y = max(0, min(img_y, current_image_copy.height - 1))
+    
+    pixel = current_image_copy.getpixel((img_x, img_y))
+    
+    if isinstance(pixel, tuple):
+        r, g, b = pixel[:3]
+    else:
+        r = g = b = pixel
+    
+    r_val.set(r)
+    g_val.set(g)
+    b_val.set(b)
+
+
+if DND_AVAILABLE:
+    canvas.drop_target_register(DND_FILES)
+    canvas.dnd_bind('<<Drop>>', handle_drop)
+
+canvas.bind('<MouseWheel>', on_mousewheel)
+canvas.bind('<Button-4>', lambda event: change_zoom(1, event))
+canvas.bind('<Button-5>', lambda event: change_zoom(-1, event))
+canvas.bind('<ButtonPress-2>', start_pan)
+canvas.bind('<B2-Motion>', pan_image)
+canvas.bind('<ButtonPress-1>', on_canvas_press)
+canvas.bind('<B1-Motion>', on_canvas_drag)
+canvas.bind('<ButtonRelease-1>', on_canvas_release)
+root.bind('<F11>', toggle_fullscreen)
+
+root.mainloop()
